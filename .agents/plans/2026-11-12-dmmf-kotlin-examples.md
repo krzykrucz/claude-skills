@@ -150,7 +150,7 @@ Spec rows: "F#-style scope", "Composition", "Acknowledgment", "Chained-sandwich 
 - Modify: `.superpowers/sdd/2026-11-12-dmmf-kotlin-examples/check_blocks.py` (`IMPORTS`, `sendAcknowledgment` stub)
 - Modify: `plugins/engineering-practices/skills/domain-modeling-made-functional/SKILL.md` ("Workflow composition" section, the two Kotlin blocks and their lead-ins)
 
-- [ ] **Step 1: Harness learns the new APIs**
+- [x] **Step 1: Harness learns the new APIs**
 
 Add `import arrow.core.flatMap` to `IMPORTS`. Change the stub to:
 
@@ -158,13 +158,13 @@ Add `import arrow.core.flatMap` to `IMPORTS`. Change the stub to:
 "sendAcknowledgment": "suspend fun sendAcknowledgment(o: PricedOrder): Unit = TODO()",
 ```
 
-- [ ] **Step 2: Run the harness on the current skill and watch it fail**
+- [x] **Step 2: Run the harness on the current skill and watch it fail**
 
 The current `.bind()` block calls `sendAcknowledgment(priced).bind()`, which no longer type-checks against a `Unit` stub.
 
 Expected: a compile error on `bind`, non-zero exit.
 
-- [ ] **Step 3: Replace the two Kotlin blocks with three**
+- [x] **Step 3: Replace the two Kotlin blocks with three**
 
 Lead-in 1: "In Kotlin, Arrow's `Either` chains the same way: `flatMap` is `Result.bind`, `map` is `Result.map`, and `onRight` runs an effect on success and passes the value on:"
 
@@ -208,16 +208,16 @@ suspend fun placeOrder(command: PlaceOrderCommand): Either<PlaceOrderError, List
 
 "Failures short-circuit. The workflow reads as the design." stays after the third block.
 
-- [ ] **Step 4: Run the harness and watch it pass**
+- [x] **Step 4: Run the harness and watch it pass**
 
 ```bash
 python3 .superpowers/sdd/2026-11-12-dmmf-kotlin-examples/check_blocks.py \
   plugins/engineering-practices/skills/domain-modeling-made-functional/SKILL.md
 ```
 
-Expected: one more block and one more file than before, then `exit 0`.
+Expected: one more block and one more file than before, then `exit 0`. Observed: `13 kotlin blocks -> 15 files`, `exit 0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .superpowers/sdd/2026-11-12-dmmf-kotlin-examples/check_blocks.py plugins/engineering-practices/skills/domain-modeling-made-functional/SKILL.md
@@ -229,7 +229,7 @@ git commit -m "docs(domain-modeling-made-functional): Kotlin composition pipes i
 **Files:**
 - Modify: `plugins/engineering-practices/skills/domain-modeling-made-functional/SKILL.md` (Kotlin block under "Two chained sandwiches")
 
-- [ ] **Step 1: Replace the `NeedsReprice` branch**
+- [x] **Step 1: Replace the `NeedsReprice` branch**
 
 ```kotlin
                is NeedsReprice -> getQuote(plan.lines).bind()              // impure: the mid fetch
@@ -239,25 +239,20 @@ git commit -m "docs(domain-modeling-made-functional): Kotlin composition pipes i
 
 `val state` and the `ReadyToPlace` branch stay as they are.
 
-- [ ] **Step 2: Run the harness**
+- [x] **Step 2: Run the harness**
 
 Same command as Task 7 Step 4. Expected: same counts, `exit 0`.
 
-- [ ] **Step 3: Commit**
-
-```bash
-git add plugins/engineering-practices/skills/domain-modeling-made-functional/SKILL.md
-git commit -m "docs(domain-modeling-made-functional): the chained-sandwich shell pipes its re-quote branch"
-```
+- [x] **Step 3: Commit** — landed in the Task 7 commit, `5452c17`.
 
 ### Task 9: Push and update the PR
 
-- [ ] **Step 1: Push the branch**
+- [x] **Step 1: Push the branch**
 
 ```bash
 git push origin cursor/dmmf-kotlin-examples-213c
 ```
 
-- [ ] **Step 2: Update the PR description**
+- [x] **Step 2: Update the PR description**
 
 Replace the "`Raise<E>` steps" bullet with one describing the three composition blocks and the piped re-quote branch, update the Kotlin block count in Verification, and say the skill-test runs predate this change.
