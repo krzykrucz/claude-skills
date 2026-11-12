@@ -24,14 +24,15 @@ A baseline run made this concrete. Five agents got the current skill and the sam
 | --- | --- |
 | Placement | Kotlin goes inline, right after each existing C# example. No separate `kotlin.md` reference file. |
 | Coverage | Every section with a C# example gets a Kotlin one. Sections with only prose or pseudo-signatures stay as they are. |
+| Fidelity | Each Kotlin block translates the C# block next to it: same functions, cases, fields and comments. It differs only where Kotlin or Arrow idiom requires it. |
 | Library | Arrow (`arrow-core` 1.2): `Either`, `either { }`, `bind()`, `ensure`, `raise`, `Raise<E>`, `NonEmptyList`. Arrow plays the role LanguageExt plays for C#. |
-| Sum types | `sealed interface` with nested `data class` / `data object` cases; shared fields declared on the interface and `override`n. |
+| Sum types | `sealed interface` with nested `data class` / `data object` cases. Fields stay on the cases, as in the C# records. |
 | Wrapped primitives | `@JvmInline value class`. Validated ones get a `private constructor` and a companion `operator fun invoke(raw): Either<ValidationError, T>`. |
 | Workflow signature | `fun interface` with `suspend operator fun invoke(command): Either<Error, List<Event>>`. `suspend` stands in for `Aff`. |
-| Ports | `fun interface` with `suspend operator fun invoke`, returning `Either<InfrastructureError, T>`. |
-| Infrastructure errors | Kotlin has no `Aff`, so adapters catch with `Either.catch { }` and map to an `InfrastructureError` case. That case lives in the shell's error type, never in a pure domain function's error type. |
-| Composition | `either { }` with `.bind()` per step, mirroring the C# LINQ block. `Raise<E>` extension functions shown as the alternative. |
-| Exhaustiveness | Kotlin's `when` over a sealed type or enum is a compile error when a case is missing. The Kotlin hole is `else`, so the example lists the cases, grouping shared results. |
+| Ports | `fun interface` with `suspend operator fun invoke`. |
+| Infrastructure errors | No Kotlin-only note. A first draft had one (`Either.catch` in adapters, mapped to an `InfrastructureError` case); it was removed in review. |
+| Composition | `either { }` with `.bind()` per step, mirroring the C# LINQ block. The same workflow with `Raise<E>` extension steps is shown as the alternative. |
+| Exhaustiveness | Kotlin's `when` over a sealed type or enum is a compile error when a case is missing. The Kotlin hole is `else`, so the bad example uses `else` and the good one lists every case, mirroring the C# `Describe`. |
 | Description | Add "Kotlin with Arrow" to the trigger list. The description was at 1023 of 1024 characters, so "the functional rendering of domain-driven design" becomes "functional domain-driven design" and "records and" is dropped from the C# entry. |
 | Not added | No guidance on `kotlin.Result` or on `data class` `copy()` bypassing a private constructor. No baseline run did either, so there's nothing to fix. |
 

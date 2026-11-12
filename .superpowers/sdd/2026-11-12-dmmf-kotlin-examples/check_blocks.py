@@ -68,7 +68,7 @@ STUBS = {
 
 
 def declares(block, name):
-    return re.search(rf"\b(class|interface|object|fun(\s+Raise<\w+>\.)?|val)\s+{name}\b", block) is not None
+    return re.search(rf"\b((class|interface|object|val)\s+|fun\s+(Raise<\w+>\.)?){name}\b", block) is not None
 
 
 def uses(block, name):
@@ -84,7 +84,7 @@ def prepare(block):
 
 
 def split_bad_good(block):
-    if "// Bad: caller has no idea" in block:
+    if "// Bad:" in block and "\n// Good:" in block:
         bad, good = block.split("// Good:")
         return [bad, "// Good:" + good]
     return [block]
