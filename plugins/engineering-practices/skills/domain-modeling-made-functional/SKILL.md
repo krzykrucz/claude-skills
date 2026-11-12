@@ -1,13 +1,13 @@
 ---
 name: domain-modeling-made-functional
-description: Apply Scott Wlaschin's "Domain Modeling Made Functional" (Pragmatic Bookshelf, 2018), the functional rendering of domain-driven design. Covers making illegal states unrepresentable with algebraic data types, workflows as type signatures (Command → Result<Events, DomainError>), errors as values on a railway (domain errors, infrastructure errors, panics), single-case wrappers against primitive obsession, aggregates as a choice of states, functional core and imperative shell with the impureim (read-calculate-write) sandwich, and dependency rejection, where the domain takes data and returns decisions. Use when designing a workflow, aggregate or endpoint in a typed language (F#, TypeScript, C# with records and LanguageExt), when asking whether invariants live in types or in runtime guards, when a record full of Option fields and mutually exclusive bools should be a sum type, or when a decision needs an external call partway through. Skip for dynamically typed code and for strategic DDD (use domain-driven-design).
+description: Apply Scott Wlaschin's "Domain Modeling Made Functional" (Pragmatic Bookshelf, 2018), functional domain-driven design. Covers making illegal states unrepresentable with algebraic data types, workflows as type signatures (Command → Result<Events, DomainError>), errors as values on a railway (domain errors, infrastructure errors, panics), single-case wrappers against primitive obsession, aggregates as a choice of states, functional core and imperative shell with the impureim (read-calculate-write) sandwich, and dependency rejection, where the domain takes data and returns decisions. Use when designing a workflow, aggregate or endpoint in a typed language (F#, TypeScript, C# with LanguageExt, Kotlin with Arrow), when asking whether invariants live in types or in runtime guards, when a record full of Option fields and mutually exclusive bools should be a sum type, or when a decision needs an external call partway through. Skip for dynamically typed code and for strategic DDD (use domain-driven-design).
 ---
 
 # Domain Modeling Made Functional
 
 Scott Wlaschin's book is functional DDD: the same domain-modeling instinct as Evans/Vernon, applied with the rigor of a strong static type system. The thesis: **most domain bugs are illegal states the type system was never told to forbid.** Encode the constraints in types and the compiler becomes your domain expert.
 
-The book uses F#, but every principle translates. C# with records + LanguageExt, Scala, Kotlin, TypeScript with discriminated unions — all work. Examples below favor C# since that's where most readers will land.
+The book uses F#, but every principle translates. C# with records + LanguageExt, Scala, Kotlin, TypeScript with discriminated unions — all work. Examples below favor C#, with Kotlin alongside: sealed interfaces for sum types and [Arrow](https://arrow-kt.io) (`Either`, `either { }`, `Raise`) in the role LanguageExt plays for C#.
 
 ## Core philosophy
 
@@ -47,6 +47,23 @@ public record EmailAddress
 }
 ```
 
+Kotlin:
+```kotlin
+@JvmInline
+value class CustomerId(val value: UUID)
+
+@JvmInline
+value class EmailAddress private constructor(val value: String) {
+    companion object {
+        operator fun invoke(raw: String): Either<ValidationError, EmailAddress> =
+            either {
+                ensure('@' in raw) { ValidationError("not an email: $raw") }
+                EmailAddress(raw)
+            }
+    }
+}
+```
+
 The compiler now refuses to mix a `CustomerId` with an `OrderId`, or to construct an `EmailAddress` from arbitrary text. The factory is the only entry point — every `EmailAddress` in the system is necessarily valid by construction. The validator runs once at the boundary; nobody downstream needs to re-check.
 
 ### Sum types for state-dependent shapes
@@ -65,6 +82,17 @@ public record Order(
 // "Validated with no lines"? Sure, why not.
 ```
 
+```kotlin
+// Bad: nullable fields encode state, but the compiler can't enforce coherence.
+data class Order(
+    val id: OrderId,
+    val validatedAt: Instant?,
+    val price: Money?,
+    val paidAt: Instant?,
+    val payment: PaymentRef?,
+)
+```
+
 ```csharp
 // Better: each state is its own type with only the fields valid in that state.
 public abstract record Order
@@ -76,7 +104,19 @@ public abstract record Order
 }
 ```
 
-`Order.Paid` requires a `PaymentRef`. You cannot construct a paid order without payment. State machines are no longer a runtime convention — they're enforced by `record` constructors.
+```kotlin
+// Better: each state is its own type with only the fields valid in that state.
+sealed interface Order {
+    val id: OrderId
+
+    data class Unvalidated(override val id: OrderId, val lines: List<RawLine>) : Order
+    data class Validated(override val id: OrderId, val lines: List<ValidatedLine>) : Order
+    data class Priced(override val id: OrderId, val lines: List<PricedLine>, val total: Money) : Order
+    data class Paid(override val id: OrderId, val lines: List<PricedLine>, val total: Money, val payment: PaymentRef) : Order
+}
+```
+
+`Order.Paid` requires a `PaymentRef`. You cannot construct a paid order without payment. State machines are no longer a runtime convention — they're enforced by `record` / `data class` constructors.
 
 ### Algebraic data types
 
@@ -108,6 +148,13 @@ The C#/LanguageExt rendering:
 public interface IPlaceOrder
 {
     Aff<Either<PlaceOrderError, Seq<PlaceOrderEvent>>> Handle(PlaceOrderCommand command);
+}
+```
+
+The Kotlin/Arrow rendering, with `suspend` in the role of `Aff`:
+```kotlin
+fun interface PlaceOrder {
+    suspend operator fun invoke(command: PlaceOrderCommand): Either<PlaceOrderError, List<PlaceOrderEvent>>
 }
 ```
 
@@ -147,7 +194,42 @@ public abstract record PlaceOrderError
 }
 ```
 
+```kotlin
+// Bad: caller has no idea what can throw or why.
+fun placeOrder(order: UnvalidatedOrder): Order { ...; throw InvalidAddressException() }
+
+// Good: signature lists the failure modes by name.
+fun placeOrder(order: UnvalidatedOrder): Either<PlaceOrderError, Order>
+
+sealed interface PlaceOrderError {
+    data class AddressInvalid(val reason: String) : PlaceOrderError
+    data class ProductOutOfStock(val id: ProductId) : PlaceOrderError
+    data class PaymentDeclined(val reason: String) : PlaceOrderError
+}
+```
+
 Now every caller pattern-matches on `PlaceOrderError`. Adding a new failure mode breaks every caller until they handle it — exactly what you want.
+
+Kotlin has no `Aff`: `suspend` marks the effect but carries no typed failure, so a thrown `IOException` is invisible in the signature. Catch it in the adapter and return it on the port, so the shell's signature names infrastructure failure too. Keep that case out of the pure domain functions' error types — they do no IO, so they can't fail on it:
+
+```kotlin
+sealed interface CloseDayError {
+    data class AlreadyClosed(val day: LocalDate) : CloseDayError
+    data class InfrastructureError(val cause: Throwable) : CloseDayError
+}
+
+fun interface SaveFiscalDay {
+    suspend operator fun invoke(day: FiscalDay.Closed): Either<CloseDayError.InfrastructureError, Unit>
+}
+
+// Adapter: the one place a thrown exception becomes a value.
+class PostgresSaveFiscalDay(private val jdbc: JdbcTemplate) : SaveFiscalDay {
+    override suspend fun invoke(day: FiscalDay.Closed): Either<CloseDayError.InfrastructureError, Unit> =
+        Either.catch { jdbc.update(INSERT_CLOSED_DAY, day.date, day.total.value) }
+            .map { }
+            .mapLeft(CloseDayError::InfrastructureError)
+}
+```
 
 ## Total functions
 
@@ -178,6 +260,23 @@ string Describe(OrderStatus s) => s switch
 ```
 
 For C# enums you'll need the `_ => throw new UnreachableException()` fallthrough — that's a genuine panic for the "new-enum-case-was-added-but-we-forgot-this-switch" bug. For sum types (sealed record hierarchies), exhaustiveness is enforced by the language.
+
+In Kotlin, a `when` expression over a sealed type or enum is checked at compile time — a missing case is an error, not a warning. The hole is `else`, which absorbs every case added later. List the cases instead, grouping those that share a result:
+
+```kotlin
+// Bad: `else` swallows Cancelled, and every status added after it.
+fun describe(status: OrderStatus): String = when (status) {
+    OrderStatus.Draft -> "draft"
+    OrderStatus.Paid -> "paid"
+    else -> "unknown"
+}
+
+// Good: exhaustive. Adding a status breaks compilation here until it's handled.
+fun isFinal(status: OrderStatus): Boolean = when (status) {
+    OrderStatus.Draft -> false
+    OrderStatus.Paid, OrderStatus.Cancelled -> true
+}
+```
 
 ## DTOs at the boundary, domain types in the core
 
@@ -236,6 +335,17 @@ public static class PlaceOrder
         Func<ProductId, Money> getPrice,   // ← passed in
         ValidatedOrder order) => ...;
 }
+```
+
+```kotlin
+// OO style: domain knows about PricingService.
+class PlaceOrder(private val pricing: PricingService) { ... }
+
+// Parameterized: domain takes the function it needs.
+fun placeOrder(
+    getPrice: (ProductId) -> Money,   // ← passed in
+    order: ValidatedOrder,
+): Either<PlaceOrderError, PricedOrder> = ...
 ```
 
 The domain has no `IPricingService` interface — just a function shape — and is trivially testable: pass a lambda in the test. But `getPrice` is *still a dependency*; if it does I/O, `Run` is no longer pure. **Dependency rejection** (Seemann's term, contra "injection") goes one step further and removes the dependency: gather the prices *before* calling the core, and pass them in as data. That shape has a name.
@@ -306,6 +416,22 @@ The hard case — and the one worth getting right. The decision can't be made fr
        select unit;
    ```
 
+   ```kotlin
+   // Shell orchestrates the interleaving; planOrder and applyQuote stay pure.
+   // planOrder : (State, Command) -> OrderPlan   (a sealed type: ReadyToPlace | NeedsReprice)
+   suspend fun placeOrder(command: PlaceOrderCommand): Either<PlaceOrderError, Unit> =
+       either {
+           val state = loadState(command.orderId).bind()                  // impure: read
+           when (val plan = planOrder(state, command)) {                  // pure: decide
+               is ReadyToPlace -> persist(plan.events).bind()             // impure: write
+               is NeedsReprice -> {
+                   val quote = getQuote(plan.lines).bind()                // impure: the mid fetch
+                   persist(applyQuote(state, quote)).bind()               // pure decide → impure write
+               }
+           }
+       }
+   ```
+
    The branch — *do we re-quote?* — is decided in the pure core and returned as a value (`NeedsReprice`), not taken inside it. `PlanOrder` and `ApplyQuote` need no mocks to test.
 
 3. **Interpreter / free monad.** Only when you have genuinely *N* interleaved decide-fetch rounds and chaining gets unwieldy: model the interactions as instructions in an AST and run them through an impure interpreter (Seemann, *Pure interactions*; Wlaschin's sixth approach, *dependency interpretation*). The heavy end. Wlaschin's own warning — "not a technique I would recommend unless you have a specific use-case for it"; in his example five instructions cost "around 100 extra lines of code." Reach for it last, if ever.
@@ -335,6 +461,30 @@ Aff<Either<PlaceOrderError, Seq<PlaceOrderEvent>>> PlaceOrder(PlaceOrderCommand 
     select CreateEvents(priced);
 ```
 
+In Kotlin, Arrow's `either { }` block gives the same shape — `.bind()` unwraps a `Right` or short-circuits on a `Left`:
+
+```kotlin
+suspend fun placeOrder(command: PlaceOrderCommand): Either<PlaceOrderError, List<PlaceOrderEvent>> =
+    either {
+        val validated = validateOrder(command).bind()
+        val priced = priceOrder(validated).bind()
+        sendAcknowledgment(priced).bind()
+        createEvents(priced)
+    }
+```
+
+Steps can also be `Raise<E>` extension functions: they return the success type directly and fail with `raise` or `ensure`, so no `.bind()` is needed. `either { }` turns them back into an `Either` at the workflow boundary:
+
+```kotlin
+fun Raise<PlaceOrderError>.priceOrder(order: ValidatedOrder, prices: Map<ProductId, Money>): PricedOrder {
+    val lines = order.lines.map { line ->
+        val price = prices[line.productId] ?: raise(PlaceOrderError.ProductOutOfStock(line.productId))
+        PricedLine(line, price * line.quantity)
+    }
+    return PricedOrder(order.id, lines, lines.fold(Money.ZERO) { total, line -> total + line.price })
+}
+```
+
 Failures short-circuit. The workflow reads as the design.
 
 ## Commands in, events out
@@ -355,6 +505,16 @@ public abstract record PlaceOrderEvent
 }
 ```
 
+```kotlin
+data class PlaceOrderCommand(val customerId: CustomerId, val lines: List<RawOrderLine>, val shipTo: Address)
+
+sealed interface PlaceOrderEvent {
+    data class OrderPlaced(val id: OrderId, val total: Money) : PlaceOrderEvent
+    data class ShippingScheduled(val id: OrderId, val estimatedDelivery: LocalDate) : PlaceOrderEvent
+    data class CustomerCharged(val id: OrderId, val amount: Money) : PlaceOrderEvent
+}
+```
+
 The sum type lists *every* possible outcome. New event? Add a case, the compiler tells you everywhere that needs to handle it.
 
 ## State as a choice of states
@@ -370,7 +530,17 @@ public abstract record Cart
 }
 ```
 
-`Cart.Active` carries `NonEmptyList<CartLine>` — you cannot have an "Active" cart with zero lines, by construction. Locked carts carry a reason; empty carts don't. The shape of valid data and the shape of states are aligned.
+```kotlin
+sealed interface Cart {
+    val customerId: CustomerId
+
+    data class Empty(override val customerId: CustomerId) : Cart
+    data class Active(override val customerId: CustomerId, val lines: NonEmptyList<CartLine>) : Cart
+    data class Locked(override val customerId: CustomerId, val lines: NonEmptyList<CartLine>, val why: LockReason) : Cart
+}
+```
+
+`Cart.Active` carries `NonEmptyList<CartLine>` (Arrow's `arrow.core.NonEmptyList` in Kotlin) — you cannot have an "Active" cart with zero lines, by construction. Locked carts carry a reason; empty carts don't. The shape of valid data and the shape of states are aligned.
 
 This is the highest-leverage application of "illegal states unrepresentable": you encode the state machine in the type, and every operation that consumes the aggregate must pattern-match on which state it's in — which means it physically cannot ignore a state.
 
@@ -384,9 +554,9 @@ When applying this lens to an existing design, ask:
 4. **Are domain errors values, not exceptions?** Grep for `throw` inside the domain. Each one is either a panic (fine, but make sure it's *truly* unreachable) or a domain failure that should become a `Result` case.
 5. **Are dependencies passed as functions, not interfaces?** The domain layer should have no infrastructure interfaces. Functions in, events out. If the domain references `IRepository<>`, the abstraction is leaking.
 6. **Are DTOs and domain types distinct?** If the API request type and the domain type are the same record, the validation/translation layer is missing — and either the DTO is too constrained or the domain is too loose.
-7. **Are partial functions caught?** Pattern matches that don't cover every case. Methods that throw for "shouldn't happen". `default!` and `null!` everywhere. Each one is a question the type system isn't being asked.
+7. **Are partial functions caught?** Pattern matches that don't cover every case. Methods that throw for "shouldn't happen". `default!` and `null!` everywhere (Kotlin: `!!`, `lateinit`, `when` with `else`). Each one is a question the type system isn't being asked.
 8. **Could a tuple-of-Options be a sum type?** `(Option<A>, Option<B>)` has four states: (None,None), (Some,None), (None,Some), (Some,Some). If only two or three are legal — or if each combination means something semantically different — model the legal subset as a sum type. The compiler then forces every caller to handle every case.
-9. **Are state-changing functions pure?** Domain functions take state in, return new state (or events) out. No `void` mutation. No `DateTime.UtcNow` inline — pass `now` as a parameter so tests can fix it.
+9. **Are state-changing functions pure?** Domain functions take state in, return new state (or events) out. No `void` mutation. No `DateTime.UtcNow` / `Instant.now()` inline — pass `now` as a parameter so tests can fix it.
 10. **Does the state itself encode its lifecycle?** If `Order` is one record with `Option<PaidAt>` and `Option<CancelledAt>` and `Option<ShippedAt>` — those are states. Model them.
 11. **Is each application service an impureim sandwich?** Read all inputs up front, call the pure domain function once, then write and publish. A domain function that holds a repository, HTTP client, or clock and calls it has fused decision and effect — lift the I/O into the shell and pass data in.
 12. **When the core seems to need a mid-decision call, did you try to reject the dependency first?** Hoist the read to the front, or split into two shell-orchestrated sandwiches, before parameterizing a callback — and reserve the interpreter/free monad for genuine multi-round interleaving.
