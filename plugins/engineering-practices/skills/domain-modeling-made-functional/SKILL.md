@@ -404,10 +404,9 @@ The hard case — and the one worth getting right. The decision can't be made fr
            val state = loadState(command.orderId).bind()                  // impure: read
            when (val plan = planOrder(state, command)) {                  // pure: decide
                is ReadyToPlace -> persist(plan.events).bind()             // impure: write
-               is NeedsReprice -> {
-                   val quote = getQuote(plan.lines).bind()                // impure: the mid fetch
-                   persist(applyQuote(state, quote)).bind()               // pure decide → impure write
-               }
+               is NeedsReprice -> getQuote(plan.lines).bind()             // impure: the mid fetch
+                   .let { applyQuote(state, it) }                         // pure: decide
+                   .let { persist(it).bind() }                            // impure: write
            }
        }
    ```
@@ -441,31 +440,43 @@ Aff<Either<PlaceOrderError, Seq<PlaceOrderEvent>>> PlaceOrder(PlaceOrderCommand 
     select CreateEvents(priced);
 ```
 
-In Kotlin, Arrow's `either { }` block gives the same shape — `.bind()` unwraps a `Right` or short-circuits on a `Left`:
+In Kotlin, Arrow's `Either` chains the same way: `flatMap` is `Result.bind`, `map` is `Result.map`, and `onRight` runs an effect on success and passes the value on:
 
 ```kotlin
 suspend fun placeOrder(command: PlaceOrderCommand): Either<PlaceOrderError, List<PlaceOrderEvent>> =
-    either {
-        val validated = validateOrder(command).bind()
-        val priced = priceOrder(validated).bind()
-        sendAcknowledgment(priced).bind()
-        createEvents(priced)
-    }
+    validateOrder(command)
+        .flatMap(::priceOrder)
+        .onRight { sendAcknowledgment(it) }   // fire-and-forget: a failed acknowledgment doesn't fail the order
+        .map(::createEvents)
 ```
 
-Steps can also be `Raise<E>` extension functions: they return the success type directly and fail with `raise` or `ensure`, so no `.bind()` is needed. `either { }` turns them back into an `Either` at the workflow boundary:
+Steps can also be `Raise<E>` extension functions: they return the success type directly and fail with `raise` or `ensure`, so no `.bind()` is needed. `either { }` turns them back into an `Either` at the workflow boundary, and `.let` pipes each step into the next:
 
 ```kotlin
 suspend fun Raise<PlaceOrderError>.validateOrder(command: PlaceOrderCommand): ValidatedOrder = ...
 fun Raise<PlaceOrderError>.priceOrder(order: ValidatedOrder): PricedOrder = ...
-suspend fun Raise<PlaceOrderError>.sendAcknowledgment(order: PricedOrder): Unit = ...
+suspend fun sendAcknowledgment(order: PricedOrder): Unit = ...
 
 suspend fun placeOrder(command: PlaceOrderCommand): Either<PlaceOrderError, List<PlaceOrderEvent>> =
     either {
-        val validated = validateOrder(command)
-        val priced = priceOrder(validated)
-        sendAcknowledgment(priced)
-        createEvents(priced)
+        command
+            .let { validateOrder(it) }
+            .let { priceOrder(it) }
+            .also { sendAcknowledgment(it) }
+            .let(::createEvents)
+    }
+```
+
+Steps that return `Either` pipe the same way inside `either { }`, with `.bind()` unwrapping each `Right` or short-circuiting on a `Left`:
+
+```kotlin
+suspend fun placeOrder(command: PlaceOrderCommand): Either<PlaceOrderError, List<PlaceOrderEvent>> =
+    either {
+        command
+            .let { validateOrder(it).bind() }
+            .let { priceOrder(it).bind() }
+            .also { sendAcknowledgment(it) }
+            .let(::createEvents)
     }
 ```
 

@@ -13,6 +13,7 @@ blocks = re.findall(r"^ *```kotlin\n(.*?)^ *```", skill, re.M | re.S)
 IMPORTS = """
 import arrow.core.Either
 import arrow.core.NonEmptyList
+import arrow.core.flatMap
 import arrow.core.raise.Raise
 import arrow.core.raise.either
 import arrow.core.raise.ensure
@@ -62,7 +63,7 @@ STUBS = {
     # composition
     "validateOrder": "suspend fun validateOrder(c: PlaceOrderCommand): Either<PlaceOrderError, ValidatedOrder> = TODO()",
     "priceOrder": "fun priceOrder(o: ValidatedOrder): Either<PlaceOrderError, PricedOrder> = TODO()",
-    "sendAcknowledgment": "suspend fun sendAcknowledgment(o: PricedOrder): Either<PlaceOrderError, Unit> = TODO()",
+    "sendAcknowledgment": "suspend fun sendAcknowledgment(o: PricedOrder): Unit = TODO()",
     "createEvents": "fun createEvents(o: PricedOrder): List<PlaceOrderEvent> = TODO()",
 }
 
