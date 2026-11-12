@@ -440,36 +440,16 @@ Aff<Either<PlaceOrderError, Seq<PlaceOrderEvent>>> PlaceOrder(PlaceOrderCommand 
     select CreateEvents(priced);
 ```
 
-In Kotlin, Arrow's `Either` chains the same way: `flatMap` is `Result.bind`, `map` is `Result.map`, and `onRight` runs an effect on success and passes the value on:
+In Kotlin, Arrow's `Either` gives the same shape:
 
 ```kotlin
 suspend fun placeOrder(command: PlaceOrderCommand): Either<PlaceOrderError, List<PlaceOrderEvent>> =
     validateOrder(command)
         .flatMap(::priceOrder)
-        .onRight { sendAcknowledgment(it) }   // fire-and-forget: a failed acknowledgment doesn't fail the order
+        .onRight { sendAcknowledgment(it) }
         .map(::createEvents)
-```
 
-Steps can also be `Raise<E>` extension functions: they return the success type directly and fail with `raise` or `ensure`, so no `.bind()` is needed. `either { }` turns them back into an `Either` at the workflow boundary, and `.let` pipes each step into the next:
-
-```kotlin
-suspend fun Raise<PlaceOrderError>.validateOrder(command: PlaceOrderCommand): ValidatedOrder = ...
-fun Raise<PlaceOrderError>.priceOrder(order: ValidatedOrder): PricedOrder = ...
-suspend fun sendAcknowledgment(order: PricedOrder): Unit = ...
-
-suspend fun placeOrder(command: PlaceOrderCommand): Either<PlaceOrderError, List<PlaceOrderEvent>> =
-    either {
-        command
-            .let { validateOrder(it) }
-            .let { priceOrder(it) }
-            .also { sendAcknowledgment(it) }
-            .let(::createEvents)
-    }
-```
-
-Steps that return `Either` pipe the same way inside `either { }`, with `.bind()` unwrapping each `Right` or short-circuiting on a `Left`:
-
-```kotlin
+// or:
 suspend fun placeOrder(command: PlaceOrderCommand): Either<PlaceOrderError, List<PlaceOrderEvent>> =
     either {
         command
