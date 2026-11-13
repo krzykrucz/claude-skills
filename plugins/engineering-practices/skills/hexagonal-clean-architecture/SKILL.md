@@ -93,12 +93,12 @@ The term comes from Cockburn's original formulation; it remains the clearest men
 **A port is an interface owned by the application** — defined in terms the application cares about, in the application's vocabulary. Examples:
 - `OrderRepository.save(order: Order)`
 - `EmailSender.send(message: EmailMessage)`
-- `java.time.Clock` — the deliberate exception: a stable JDK abstraction you inject as-is instead of wrapping it in a port of your own
+- `java.time.Clock`
 
 **An adapter is an implementation of a port** that connects to a specific technology:
 - `SqlOrderRepository : OrderRepository`
 - `SmtpEmailSender : EmailSender`
-- `Clock.systemUTC()` in production, `Clock.fixed(...)` in tests
+- `Clock.systemUTC()` / `Clock.fixed(...)`
 
 ```
        (Application defines what it needs)
