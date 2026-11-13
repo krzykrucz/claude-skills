@@ -40,7 +40,8 @@ Kotlin:
 @JvmInline value class EmailAddress private constructor(val value: String) {
     companion object {
         fun create(str: String): Either<String, EmailAddress> =
-            if ('@' in str) EmailAddress(str).right() else "not an email".left()
+            if ('@' in str) EmailAddress(str).right() 
+            else "not an email".left()
     }
 }
 ```
@@ -111,6 +112,16 @@ typealias PlaceOrder = suspend (
     SendOrderAcknowledgment,            // dependency
     PlaceOrderCommand,
 ) -> Either<PlaceOrderError, List<PlaceOrderEvent>>
+
+// or:
+
+class PlaceOrder(
+   val checkProductExists: CheckProductExists,
+   val checkAddressExists: CheckAddressExists,
+   val getProductPrice: GetProductPrice,
+   val createOrderAcknowledgment: CreateOrderAcknowledgment,
+   val sendOrderAcknowledgment: SendOrderAcknowledgment,
+): suspend (PlaceOrderCommand) -> Either<PlaceOrderError, List<PlaceOrderEvent>>
 ```
 
 Then implement step by step, each step a total function whose type fits the next step's input:
@@ -295,10 +306,9 @@ The hard case — and the one worth getting right. The decision can't be made fr
        val state = loadState(command.customerId).bind()        // impure: read
        when (val plan = planOrder(state, command)) {           // pure: decide
            is ReadyToPlace -> persist(plan.events).bind()      // impure: write
-           is NeedsReprice -> {
-               val quote = getQuote(plan.lines).bind()         // impure: the mid fetch
-               persist(applyQuote(state, quote)).bind()        // pure decide → impure write
-           }
+               is NeedsReprice -> getQuote(plan.lines).bind()  // impure: the mid fetch
+                   .let { applyQuote(state, it) }              // pure: decide
+                   .let { persist(it).bind() }                 // impure: write
        }
    }
    ```
@@ -325,12 +335,23 @@ let placeOrder =
 Kotlin has no `>>`, but Arrow's `Either` chains the same way:
 
 ```kotlin
-val placeOrder = { order: UnvalidatedOrder ->
-    validateOrder(order)
+val placeOrder = suspend { command: PlaceOrderCommand ->
+    validateOrder(command)
         .flatMap(::priceOrder)
         .flatMap(::sendAcknowledgment)
         .map(::createEvents)
 }
+
+// or:
+
+suspend fun placeOrder(command: PlaceOrderCommand): Either<PlaceOrderError, List<PlaceOrderEvent>> =
+    either {
+        command
+            .let { validateOrder(it).bind() }
+            .let { priceOrder(it).bind() }
+            .also { sendAcknowledgment(it) }
+            .let(::createEvents)
+    }
 ```
 
 Failures short-circuit. The workflow reads as the design.
