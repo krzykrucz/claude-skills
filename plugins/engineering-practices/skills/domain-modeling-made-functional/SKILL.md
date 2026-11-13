@@ -7,7 +7,7 @@ description: Apply Scott Wlaschin's "Domain Modeling Made Functional" (Pragmatic
 
 Scott Wlaschin's book is functional DDD: the same domain-modeling instinct as Evans/Vernon, applied with the rigor of a strong static type system. The thesis: **most domain bugs are illegal states the type system was never told to forbid.** Encode the constraints in types and the compiler becomes your domain expert.
 
-The book uses F#, but every principle translates. C# with records + LanguageExt, Scala, Kotlin, TypeScript with discriminated unions — all work. Examples below are Kotlin with Arrow, written the way the book writes F#: function types over interfaces, sealed types as unions, pipelines over imperative steps.
+The book uses F#, but every principle translates. C# with records + LanguageExt, Scala, Kotlin, TypeScript with discriminated unions — all work. Examples below are Kotlin with Arrow.
 
 ## Core philosophy
 
