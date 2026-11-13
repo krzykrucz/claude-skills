@@ -211,7 +211,7 @@ my-app/
 └── shared/           // truly cross-cutting, used sparingly
 ```
 
-The module layout is not the architecture — but it makes the architecture enforceable: Gradle module dependencies will only compile if the dependency rule is honored. Packages in a single module work too, but then the compiler no longer enforces the rule.
+The project layout is not the architecture — but it makes the architecture enforceable: the project references will only compile if the dependency rule is honored. Packages within single project work too, but dependencies should be enforced with extra tests.
 
 ---
 
