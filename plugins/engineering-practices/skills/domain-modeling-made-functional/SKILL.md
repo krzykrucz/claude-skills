@@ -121,7 +121,9 @@ class PlaceOrder(
    val getProductPrice: GetProductPrice,
    val createOrderAcknowledgment: CreateOrderAcknowledgment,
    val sendOrderAcknowledgment: SendOrderAcknowledgment,
-): suspend (PlaceOrderCommand) -> Either<PlaceOrderError, List<PlaceOrderEvent>>
+) {
+    suspend operator fun invoke(command: PlaceOrderCommand): Either<PlaceOrderError, List<PlaceOrderEvent>> = ...
+}
 ```
 
 Then implement step by step, each step a total function whose type fits the next step's input:
