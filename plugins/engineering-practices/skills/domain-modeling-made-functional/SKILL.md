@@ -335,7 +335,7 @@ let placeOrder =
 Kotlin has no `>>`, but Arrow's `Either` chains the same way:
 
 ```kotlin
-val placeOrder = suspend { command: PlaceOrderCommand ->
+val placeOrder: suspend (PlaceOrderCommand) -> Either<PlaceOrderError, List<PlaceOrderEvent>> = { command ->
     validateOrder(command)
         .flatMap(::priceOrder)
         .flatMap(::sendAcknowledgment)
