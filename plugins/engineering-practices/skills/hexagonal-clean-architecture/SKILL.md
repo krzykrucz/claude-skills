@@ -91,21 +91,21 @@ The differences are presentation, not substance. We will use the terms interchan
 The term comes from Cockburn's original formulation; it remains the clearest mental model.
 
 **A port is an interface owned by the application** — defined in terms the application cares about, in the application's vocabulary. Examples:
-- `IOrderRepository.Save(Order o)`
-- `IEmailSender.Send(EmailMessage m)`
-- `IClock.Now`
+- `OrderRepository.save(order: Order)`
+- `EmailSender.send(message: EmailMessage)`
+- `java.time.Clock`
 
 **An adapter is an implementation of a port** that connects to a specific technology:
-- `SqlOrderRepository : IOrderRepository`
-- `SmtpEmailSender : IEmailSender`
-- `SystemClock : IClock`
+- `SqlOrderRepository : OrderRepository`
+- `SmtpEmailSender : EmailSender`
+- `Clock.systemUTC()` / `Clock.fixed(...)`
 
 ```
        (Application defines what it needs)
                      │
                      ▼
            ┌────────PORT────────┐
-           │  IOrderRepository  │
+           │  OrderRepository   │
            └────────────────────┘
                 ▲           ▲
                 │           │
@@ -131,7 +131,7 @@ HTTP ─────► │ Driving               │
 ctrl        │   Port                │
             │   (use case)          │
             │                       │
-            │             Driven ───┼──► IRepository ──► SqlRepo
+            │             Driven ───┼──► Repository ──► SqlRepo
             │             Port      │
             └───────────────────────┘
 ```
@@ -150,7 +150,7 @@ Practical consequences:
 - Repository interfaces live with the application (inner); implementations live in infrastructure (outer).
 - Domain events are pure data; their handlers may live in any layer, but the events themselves are domain artifacts.
 
-**Test:** if you can compile and run the domain and application layers with the infrastructure project absent, the dependency rule is being honored.
+**Test:** if you can compile and run the domain and application layers with the infrastructure module absent, the dependency rule is being honored.
 
 ---
 
@@ -159,7 +159,7 @@ Practical consequences:
 Data crossing layers should not carry inner-layer concerns to outer layers or vice versa.
 
 - **DTOs at the boundary.** Controllers receive DTOs, map to domain commands, call the use case, map the domain result back to a DTO. Domain entities do not get serialized directly.
-- **Don't put framework attributes on domain types.** No `[Table]`, `[Column]`, `[JsonProperty]` on `Order`. Map at the boundary.
+- **Don't put framework attributes on domain types.** No persistence or serialization annotations on `Order`. Map at the boundary.
 - **Different DTOs for different boundaries.** The HTTP DTO and the persistence DTO are usually different — model each to its boundary, not to a shared "data" abstraction.
 
 The mapping is annoying. It is also the price of independence. Frameworks change; your domain shouldn't.
@@ -181,42 +181,44 @@ The split is natural because the architecture already isolates concerns; tests f
 
 ## Common Implementations
 
-### Two-project (minimal)
+### Two-module (minimal)
 ```
-src/
-├── MyApp.Domain/           // entities + use cases + ports
-└── MyApp.Infrastructure/   // adapters + composition root
+my-app/
+├── domain/           // entities + use cases + ports
+└── infrastructure/   // adapters + composition root
 ```
 
-### Three-project (typical)
+### Three-module (typical)
 ```
-src/
-├── MyApp.Domain/           // entities, value objects, domain services
-├── MyApp.Application/      // use cases, ports
-├── MyApp.Infrastructure/   // adapter implementations
-└── MyApp.Host/             // composition root, HTTP, wiring
+my-app/
+├── domain/           // entities, value objects, domain services
+├── application/      // use cases, ports
+├── infrastructure/   // adapter implementations
+└── app/              // composition root, HTTP, wiring
 ```
 
 ### Larger (DDD-aligned)
 ```
-src/
-├── BoundedContextA.Domain/
-├── BoundedContextA.Application/
-├── BoundedContextA.Infrastructure/
-├── BoundedContextB.Domain/
-├── BoundedContextB.Application/
-├── BoundedContextB.Infrastructure/
-└── Shared/                   // truly cross-cutting, used sparingly
+my-app/
+├── bounded-context-a/
+│   ├── domain/
+│   ├── application/
+│   └── infrastructure/
+├── bounded-context-b/
+│   ├── domain/
+│   ├── application/
+│   └── infrastructure/
+└── shared/           // truly cross-cutting, used sparingly
 ```
 
-The project layout is not the architecture — but it makes the architecture enforceable: the project references will only compile if the dependency rule is honored.
+The project layout is not the architecture — but it makes the architecture enforceable: the project references will only compile if the dependency rule is honored. Packages within single project work too, but dependencies should be enforced with extra tests.
 
 ---
 
 ## What This Buys You
 
 - **Independent testability.** Domain and application tests run in milliseconds.
-- **Replaceable infrastructure.** Swap Postgres for SQL Server, REST for gRPC, ASP.NET for minimal APIs — without touching the domain.
+- **Replaceable infrastructure.** Swap Postgres for SQL Server, REST for gRPC, one web framework for another — without touching the domain.
 - **Long-lived business logic.** Frameworks come and go; the domain endures.
 - **Bounded change radius.** Most changes touch one layer.
 - **Compatibility with DDD.** Aggregates live in the domain; use cases in the application; repositories as ports. Hexagonal is the natural home for DDD.
@@ -236,7 +238,7 @@ The project layout is not the architecture — but it makes the architecture enf
 
 ## Common Mistakes
 
-- **Letting framework types leak into the domain.** EF entities used as domain entities; HTTP DTOs returned from use cases. Map at the boundary.
+- **Letting framework types leak into the domain.** ORM entities used as domain entities; HTTP DTOs returned from use cases. Map at the boundary.
 - **Putting repository interfaces in the infrastructure layer.** Defeats DIP — the high-level should own the contract.
 - **Use cases that reach across into other use cases.** Use cases compose only through the domain; calling another use case directly produces tight coupling.
 - **One mega-use-case ("DoEverything")** that orchestrates many concerns. One use case per scenario, named for what the user is trying to do.
